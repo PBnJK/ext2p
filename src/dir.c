@@ -55,11 +55,11 @@ void dirReadLinkedList(Disk *disk, uint32_t blockSize, Dir *dir) {
 }
 
 void dirFreeLinkedList(Dir *dir) {
+	free(dir->filename);
+
 	if( dir->next == NULL ) {
 		return;
 	}
-
-	free(dir->filename);
 
 	dir = dir->next;
 	Dir *next = dir->next;

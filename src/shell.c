@@ -266,6 +266,7 @@ SHELL_FN(cd) {
 
 	Dir root;
 	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
+		dirFreeLinkedList(&root);
 		return EXIT_FAILURE;
 	}
 
@@ -422,6 +423,7 @@ SHELL_FN(ls) {
 
 	Dir root;
 	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
+		dirFreeLinkedList(&root);
 		return EXIT_FAILURE;
 	}
 
@@ -449,6 +451,7 @@ SHELL_FN(stat) {
 
 	Dir root;
 	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
+		dirFreeLinkedList(&root);
 		return EXIT_FAILURE;
 	}
 
