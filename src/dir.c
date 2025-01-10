@@ -14,9 +14,7 @@ Dir *dirNew(void) {
 	return dir;
 }
 
-Dir *dirReadLinkedList(Disk *disk, uint32_t blockSize) {
-	Dir *dir = dirNew();
-
+void dirReadLinkedList(Disk *disk, uint32_t blockSize, Dir *dir) {
 	Dir *prev = dir;
 	Dir *curr = dir;
 
@@ -54,15 +52,16 @@ Dir *dirReadLinkedList(Disk *disk, uint32_t blockSize) {
 		prev = curr;
 		curr = curr->next;
 	}
-
-	return dir;
 }
 
 void dirFreeLinkedList(Dir *dir) {
-	if( dir == NULL ) {
+	if( dir->next == NULL ) {
 		return;
 	}
 
+	free(dir->filename);
+
+	dir = dir->next;
 	Dir *next = dir->next;
 	while( true ) {
 		free(dir->filename);

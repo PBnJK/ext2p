@@ -13,8 +13,11 @@
 #include "bg.h"
 #include "disk.h"
 #include "superblock.h"
+#include "util.h"
 
 #include "ext2.h"
+
+static uint32_t _inodeToBG(Ext2 *ext2, uint32_t inodenum);
 
 Ext2 *ext2Open(const char *FILEPATH) {
 	Ext2 *ext2 = malloc(sizeof(*ext2));
@@ -49,7 +52,26 @@ void ext2Free(Ext2 *ext2) {
 	free(ext2);
 }
 
-Dir *ext2GetDir(Ext2 *ext2, uint32_t inodenum) {
-	uint32_t bg = (inodenum - 1) / ext2->bgs->sb.inodesPerGroup;
-	return bgGetDir(&ext2->bgs[bg], inodenum);
+void ext2GetInode(Ext2 *ext2, uint32_t inodenum, Inode *inode) {
+	uint32_t bg = _inodeToBG(ext2, inodenum);
+	bgGetInode(&ext2->bgs[bg], inodenum, inode);
+}
+
+uint64_t ext2GetInodeSize(Ext2 *ext2, uint32_t inodenum, Inode *inode) {
+	uint32_t bg = _inodeToBG(ext2, inodenum);
+	return bgGetInodeSize(&ext2->bgs[bg], inode);
+}
+
+bool ext2GetDir(Ext2 *ext2, uint32_t inodenum, Dir *dir) {
+	uint32_t bg = _inodeToBG(ext2, inodenum);
+	return bgGetDir(&ext2->bgs[bg], inodenum, dir);
+}
+
+bool ext2ReadFile(Ext2 *ext2, uint32_t inodenum, FP *fp) {
+	uint32_t bg = _inodeToBG(ext2, inodenum);
+	return bgReadFile(&ext2->bgs[bg], inodenum, fp);
+}
+
+static uint32_t _inodeToBG(Ext2 *ext2, uint32_t inodenum) {
+	return (inodenum - 1) / ext2->bgs->sb.inodesPerGroup;
 }

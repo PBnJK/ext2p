@@ -14,10 +14,12 @@
 #include "fault.h"
 #include "inode.h"
 #include "superblock.h"
+#include "util.h"
 
 #include "bg.h"
 
 static bool _readBGTable(BlockGroup *bg, const uint32_t BLOCK_SIZE, Disk *disk);
+static uint32_t _inodeToIndex(BlockGroup *bg, uint32_t inodenum);
 
 bool bgRead(int num, BlockGroup *bg, Disk *disk) {
 	if( !sbRead(&bg->sb, disk) ) {
@@ -85,17 +87,72 @@ void bgFreeAll(BlockGroup *bgs, size_t count) {
 	free(bgs);
 }
 
-Dir *bgGetDir(BlockGroup *bg, uint32_t inodenum) {
-	inodenum = (inodenum - 1) % bg->sb.inodesPerGroup;
+void bgGetInode(BlockGroup *bg, uint32_t inodenum, Inode *inode) {
+	inodenum = _inodeToIndex(bg, inodenum);
+	*inode = bg->inodes[inodenum];
+}
+
+uint64_t bgGetInodeSize(BlockGroup *bg, Inode *inode) {
+	if( bg->sb.revLevel == SB_REV_DYNAMIC ) {
+		return ((uint64_t)(inode->size_hi) << 32) | (uint64_t)inode->size_lo;
+	} else {
+		return inode->size_lo;
+	}
+}
+
+bool bgGetDir(BlockGroup *bg, uint32_t inodenum, Dir *dir) {
+	inodenum = _inodeToIndex(bg, inodenum);
 	Inode *inode = &bg->inodes[inodenum];
 
 	if( (inode->mode & INODE_FM_DIR) == 0 ) {
-		ERR("tried to get contents of non-directory inode");
-		return NULL;
+		ERR("tried to get contents of non-directory inode\n");
+		return false;
+	}
+
+	if( (inode->flags & INODE_FL_INDEX_DIR) ) {
+		WARN("dir indexing not implemented, falling back to linked list\n");
 	}
 
 	diskSeek(bg->data, bgOffsetBlock(bg, inode->block[0]));
-	return dirReadLinkedList(bg->data, (1024 << bg->sb.logBlockSize));
+	dirReadLinkedList(bg->data, (1024 << bg->sb.logBlockSize), dir);
+
+	return true;
+}
+
+bool bgReadFile(BlockGroup *bg, uint32_t inodenum, FP *fp) {
+	inodenum = _inodeToIndex(bg, inodenum);
+	Inode *inode = &bg->inodes[inodenum];
+
+	if( (inode->mode & INODE_FM_FILE) == 0 ) {
+		ERR("tried to get contents of non-file inode\n");
+		return false;
+	}
+
+	uint64_t size = bgGetInodeSize(bg, inode);
+
+	fp->_start = malloc(size);
+	fp->data = fp->_start;
+	fp->size = size;
+
+	uint64_t bytesRead = 0;
+	uint32_t maxblock = inode->blocks / (2 << bg->sb.logBlockSize);
+
+	for( uint32_t i = 0; i < maxblock; ++i ) {
+		diskSeek(bg->data, bgOffsetBlock(bg, inode->block[i]));
+
+		for( int j = 0; j < (1024 << bg->sb.logBlockSize); ++j ) {
+			fp->data[bytesRead++] = diskRead8(bg->data);
+			if( bytesRead >= size ) {
+				break;
+			}
+		}
+	}
+
+	return true;
+}
+
+static uint32_t _inodeToIndex(BlockGroup *bg, uint32_t inodenum) {
+	return (inodenum - 1) % bg->sb.inodesPerGroup;
 }
 
 uint32_t bgOffsetBlock(BlockGroup *bg, uint32_t block) {

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <time.h>
 
 #define UNUSED(A) ((void)(A))
@@ -20,9 +21,7 @@ typedef struct _FP {
 	size_t size; /* Size of the file */
 } FP;
 
-/* Formatted time */
-#define FMTTIME_SIZE 128
-typedef char fmttime_t[FMTTIME_SIZE];
+typedef char fmttime_t[BUFSIZ];
 
 /* Reads the file at 'FILEPATH' and returns its contents
  * Returns NULL on failure

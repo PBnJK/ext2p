@@ -10,7 +10,10 @@ typedef struct _Shell {
 	uint32_t cd; /* Current directory */
 
 	int pathLevel;
-	char path[255][128];
+	struct {
+		char name[255];
+		uint32_t inode;
+	} path[128];
 
 	bool run;
 	int err;

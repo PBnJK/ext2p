@@ -3,6 +3,8 @@
  */
 
 #include "util.h"
+#include <stddef.h>
+#include <stdint.h>
 #ifdef _WIN32
 #include <conio.h>
 #else
@@ -40,6 +42,7 @@ SHELL_FN(exit);
 SHELL_FN(fsdump);
 SHELL_FN(help);
 SHELL_FN(ls);
+SHELL_FN(stat);
 
 static ShellCommand _shellCommands[] = {
 	{ "cat", _shell_cat }, /* displays file contents */
@@ -51,6 +54,7 @@ static ShellCommand _shellCommands[] = {
 	{ "fsdump", _shell_fsdump }, /* dumps filesystem info */
 	{ "help", _shell_help }, /* prints help information */
 	{ "ls", _shell_ls }, /* lists a directory's contents */
+	{ "stat", _shell_stat }, /* dumps file info */
 };
 const int SHELL_CMD_COUNT = sizeof(_shellCommands) / sizeof(ShellCommand);
 
@@ -58,6 +62,8 @@ static bool _checkCommands(Shell *shell, char *buf);
 static int _getArgs(char *buf, char *argv[64]);
 
 static void _tryLevenshtein(char *buf);
+
+static char *_humanizeSize(uint64_t bytes, char *hrbytes);
 
 Shell *shellOpen(const char *IMGPATH) {
 	Shell *shell = malloc(sizeof(*shell));
@@ -92,7 +98,7 @@ bool shellRun(Shell *shell) {
 	while( shell->run ) {
 		fputs("\n/", stdout);
 		for( int i = 0; i < shell->pathLevel; ++i ) {
-			fprintf(stdout, "%s/", shell->path[i]);
+			fprintf(stdout, "%s/", shell->path[i].name);
 		}
 
 		if( shell->err == EXIT_SUCCESS ) {
@@ -119,8 +125,6 @@ bool shellRun(Shell *shell) {
 	}
 
 	shellFree(shell);
-
-	puts("bye!");
 	return true;
 }
 
@@ -186,29 +190,7 @@ static void _tryLevenshtein(char *buf) {
 	printf(" (did you mean '%s'?)\n", bestCmd);
 }
 
-SHELL_FN(cat) {
-	UNUSED(shell);
-	UNUSED(argc);
-	UNUSED(argv);
-
-	return EXIT_SUCCESS;
-}
-
-SHELL_FN(cd) {
-	if( argc != 2 ) {
-		puts("usage: cd [dir]");
-	}
-
-	char *into = argv[1];
-	if( strcmp(into, ".") == 0 ) {
-		return EXIT_SUCCESS;
-	}
-
-	Dir *root = ext2GetDir(shell->fs, shell->cd);
-	if( root == NULL ) {
-		return EXIT_FAILURE;
-	}
-
+Dir *_findInode(Dir *root, char *filename) {
 	bool found = false;
 
 	Dir *dir = root;
@@ -217,7 +199,7 @@ SHELL_FN(cd) {
 			break;
 		}
 
-		if( strcmp(dir->filename, into) == 0 ) {
+		if( strcmp(dir->filename, filename) == 0 ) {
 			found = true;
 			break;
 		}
@@ -226,19 +208,77 @@ SHELL_FN(cd) {
 	}
 
 	if( !found ) {
-		printf("couldn't cd: '%s' not found\n", into);
+		ERR("'%s' not found\n", filename);
+		return NULL;
+	}
 
-		dirFreeLinkedList(root);
+	return dir;
+}
+
+SHELL_FN(cat) {
+	if( argc != 2 ) {
+		puts("usage: cat [file]");
+		return EXIT_FAILURE;
+	}
+
+	char *filename = argv[1];
+
+	Dir root;
+	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
+		return EXIT_FAILURE;
+	}
+
+	Dir *dir = _findInode(&root, filename);
+	if( dir == NULL ) {
+		dirFreeLinkedList(&root);
+		return EXIT_FAILURE;
+	}
+
+	if( dir->filetype != DIR_FT_FILE ) {
+		printf("'%s' is not a file (is a %s)\n", filename, dirGetFiletype(dir));
+
+		dirFreeLinkedList(&root);
+		return EXIT_FAILURE;
+	}
+
+	FP data;
+	ext2ReadFile(shell->fs, dir->inode, &data);
+	for( size_t i = 0; i < data.size; ++i ) {
+		putchar(utilRead8(&data));
+	}
+
+	utilFreeFile(&data);
+	dirFreeLinkedList(&root);
+
+	return EXIT_SUCCESS;
+}
+
+SHELL_FN(cd) {
+	if( argc != 2 ) {
+		puts("usage: cd [dir]");
+		return EXIT_FAILURE;
+	}
+
+	char *into = argv[1];
+	if( strcmp(into, ".") == 0 ) {
+		return EXIT_SUCCESS;
+	}
+
+	Dir root;
+	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
+		return EXIT_FAILURE;
+	}
+
+	Dir *dir = _findInode(&root, into);
+	if( dir == NULL ) {
+		dirFreeLinkedList(&root);
 		return EXIT_FAILURE;
 	}
 
 	if( dir->filetype != DIR_FT_DIR ) {
-		printf(
-			"couldn't cd: '%s' is not a dir (is a %s)\n", into,
-			dirGetFiletype(dir)
-		);
+		printf("'%s' is not a dir (is a %s)\n", into, dirGetFiletype(dir));
 
-		dirFreeLinkedList(root);
+		dirFreeLinkedList(&root);
 		return EXIT_FAILURE;
 	}
 
@@ -249,12 +289,15 @@ SHELL_FN(cd) {
 			--shell->pathLevel;
 		}
 	} else if( shell->pathLevel < 127 ) {
+		shell->path[shell->pathLevel].inode = dir->inode;
 		strncpy(
-			shell->path[shell->pathLevel++], dir->filename, dir->nameLen + 1
+			shell->path[shell->pathLevel].name, dir->filename, dir->nameLen + 1
 		);
+
+		++shell->pathLevel;
 	}
 
-	dirFreeLinkedList(root);
+	dirFreeLinkedList(&root);
 	return EXIT_SUCCESS;
 }
 
@@ -377,12 +420,12 @@ SHELL_FN(ls) {
 	UNUSED(argc);
 	UNUSED(argv);
 
-	Dir *root = ext2GetDir(shell->fs, shell->cd);
-	if( root == NULL ) {
+	Dir root;
+	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
 		return EXIT_FAILURE;
 	}
 
-	Dir *dir = root;
+	Dir *dir = &root;
 	while( true ) {
 		if( dir == NULL ) {
 			break;
@@ -392,6 +435,82 @@ SHELL_FN(ls) {
 		dir = dir->next;
 	}
 
-	dirFreeLinkedList(root);
+	dirFreeLinkedList(&root);
 	return EXIT_SUCCESS;
+}
+
+SHELL_FN(stat) {
+	if( argc != 2 ) {
+		puts("usage: stat [file]");
+		return EXIT_FAILURE;
+	}
+
+	char *filename = argv[1];
+
+	Dir root;
+	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
+		return EXIT_FAILURE;
+	}
+
+	Dir *dir = _findInode(&root, filename);
+	if( dir == NULL ) {
+		dirFreeLinkedList(&root);
+		return EXIT_FAILURE;
+	}
+
+	Inode inode;
+	ext2GetInode(shell->fs, dir->inode, &inode);
+
+	char humansize[BUFSIZ];
+	uint64_t size = ext2GetInodeSize(shell->fs, dir->inode, &inode);
+	_humanizeSize(size, humansize);
+
+	uint32_t maxblock = inode.blocks / (2 << shell->fs->bgs->sb.logBlockSize);
+
+	puts("data:");
+	printf("  name.... %s\n", dir->filename);
+	printf("  type.... %s\n", dirGetFiletype(dir));
+	printf(
+		"  size.... %-8s blocks... %-6" PRIu32 " fs blocks... %" PRIu32 "\n",
+		humansize, inode.blocks, maxblock
+	);
+	printf(
+		"  inode... %-8" PRIu32 " links.... %" PRIu16 "\n\n", dir->inode,
+		inode.linkCount
+	);
+
+	puts("times:");
+
+	fmttime_t date;
+
+	utilFmtTime(inode.accessTime, date);
+	printf("  access... %s\n", date);
+
+	utilFmtTime(inode.modifyTime, date);
+	printf("  modify... %s\n", date);
+
+	utilFmtTime(inode.createTime, date);
+	printf("  create... %s\n", date);
+
+	utilFmtTime(inode.deleteTime, date);
+	printf("  delete... %s\n", date);
+
+	return EXIT_SUCCESS;
+}
+
+static const char *SUFFIX[] = { "B", "KiB", "MiB", "GiB", "TiB" };
+static const uint8_t SUFFIX_LEN = sizeof(SUFFIX) / sizeof(*SUFFIX);
+
+static char *_humanizeSize(uint64_t bytes, char *out) {
+	int i;
+	for( i = 0; i < SUFFIX_LEN; i++ ) {
+		if( bytes < 1024 ) {
+			break;
+		}
+
+		bytes >>= 10;
+	}
+
+	snprintf(out, BUFSIZ, "%lu%s", bytes, SUFFIX[i]);
+	return out;
 }

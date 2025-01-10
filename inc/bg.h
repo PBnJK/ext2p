@@ -10,6 +10,7 @@
 #include "disk.h"
 #include "inode.h"
 #include "superblock.h"
+#include "util.h"
 
 typedef struct _BlockGroup {
 	Superblock sb;
@@ -29,7 +30,11 @@ bool bgReadAll(BlockGroup *bgs, Disk *disk);
 void bgFree(BlockGroup *block);
 void bgFreeAll(BlockGroup *blocks, size_t count);
 
-Dir *bgGetDir(BlockGroup *bg, uint32_t inodenum);
+void bgGetInode(BlockGroup *bg, uint32_t inodenum, Inode *inode);
+uint64_t bgGetInodeSize(BlockGroup *bg, Inode *inode);
+
+bool bgGetDir(BlockGroup *bg, uint32_t inodenum, Dir *dir);
+bool bgReadFile(BlockGroup *bg, uint32_t inodenum, FP *fp);
 
 uint32_t bgOffsetBlock(BlockGroup *bg, uint32_t block);
 

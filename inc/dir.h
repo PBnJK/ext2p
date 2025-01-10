@@ -1,6 +1,7 @@
 #ifndef GUARD_EXT2_DIR_H_
 #define GUARD_EXT2_DIR_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "disk.h"
@@ -29,7 +30,7 @@ typedef struct _Dir {
 
 Dir *dirNew(void);
 
-Dir *dirReadLinkedList(Disk *disk, uint32_t blockSize);
+void dirReadLinkedList(Disk *disk, uint32_t blockSize, Dir *dir);
 void dirFreeLinkedList(Dir *dir);
 
 char *dirGetFiletype(Dir *dir);

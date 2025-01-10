@@ -124,7 +124,7 @@ uint64_t utilRead64(bool le, FP *fp) {
 
 size_t utilFmtTime(time_t time, fmttime_t ftime) {
 	const struct tm *TIME_TM = localtime(&time);
-	return strftime(ftime, 128, "%a, %d %b %Y %T %z", TIME_TM);
+	return strftime(ftime, BUFSIZ, "%a, %d %b %Y %T %z", TIME_TM);
 }
 
 int utilLevenshtein(const char *A, const char *B) {
