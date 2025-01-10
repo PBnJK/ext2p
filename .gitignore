@@ -1,0 +1,7 @@
+build/
+dev/
+
+.cache/
+
+# Test ext2 filesystem
+ext2.img

@@ -1,0 +1,16 @@
+#ifndef GUARD_EXT2_EXT2DUMP_H_
+#define GUARD_EXT2_EXT2DUMP_H_
+
+#include "ext2.h"
+
+#define DUMP_SUPERBLOCK 0x1
+#define DUMP_BGDESCRIPTOR 0x2
+#define DUMP_ALL_BGDESCRIPTOR 0x4
+#define DUMP_INODE 0x8
+#define DUMP_INODE_ALL 0x10
+#define DUMP_INODE_ROOT 0x20
+#define DUMP_ALL (DUMP_SUPERBLOCK | DUMP_BGDESCRIPTOR | DUMP_INODE)
+
+void ext2Dump(Ext2 *ext2, int flags);
+
+#endif // !GUARD_EXT2_EXT2DUMP_H_
