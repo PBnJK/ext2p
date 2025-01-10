@@ -495,6 +495,7 @@ SHELL_FN(stat) {
 	utilFmtTime(inode.deleteTime, date);
 	printf("  delete... %s\n", date);
 
+	dirFreeLinkedList(&root);
 	return EXIT_SUCCESS;
 }
 
