@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <time.h>
 
+#define UNUSED(A) ((void)(A))
+
 #define UTIL_MIN(A, B) (((A) < (B)) ? (A) : (B))
 #define UTIL_MAX(A, B) (((A) > (B)) ? (A) : (B))
 

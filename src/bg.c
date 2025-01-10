@@ -5,6 +5,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "bgdescriptor.h"
@@ -16,37 +17,48 @@
 
 #include "bg.h"
 
-bool bgRead(BlockGroup *bg, Disk *disk) {
+static bool _readBGTable(BlockGroup *bg, const uint32_t BLOCK_SIZE, Disk *disk);
+
+bool bgRead(int num, BlockGroup *bg, Disk *disk) {
 	if( !sbRead(&bg->sb, disk) ) {
 		return false;
 	}
 
 	const uint32_t BLOCK_SIZE = (1024 << bg->sb.logBlockSize);
 
-	uint32_t blockCount = BLOCK_SIZE / 32;
-	bg->bgtable = malloc(sizeof(*bg->bgtable) * blockCount);
-	if( !bgtableRead(blockCount, bg->bgtable, disk) ) {
+	if( BLOCK_SIZE != 1024 ) {
+		diskSeek(disk, BLOCK_SIZE);
+	}
+
+	diskSkip(disk, num * (BLOCK_SIZE / 32));
+	if( !_readBGTable(bg, BLOCK_SIZE, disk) ) {
 		return false;
-	}
-
-	/* Skip over reserved GDT blocks */
-	for( uint16_t i = 0; i < bg->sb.reservedGDT; ++i ) {
-		diskSkip(disk, BLOCK_SIZE);
-	}
-
-	bg->blockBitmap = malloc(BLOCK_SIZE);
-	diskCopy(disk, bg->blockBitmap, BLOCK_SIZE);
-
-	bg->inodeBitmap = malloc(BLOCK_SIZE);
-	diskCopy(disk, bg->inodeBitmap, BLOCK_SIZE);
-
-	bg->inodes = malloc(sizeof(*bg->inodes) * bg->sb.inodesPerGroup);
-	for( uint32_t i = 0; i < bg->sb.inodesPerGroup; ++i ) {
-		inodeRead(&bg->inodes[i], disk);
 	}
 
 	bg->data = diskClone(disk);
 	bg->blocksRead = diskGetPos(disk) / BLOCK_SIZE;
+
+	return true;
+}
+
+static bool
+_readBGTable(BlockGroup *bg, const uint32_t BLOCK_SIZE, Disk *disk) {
+	diskCopy(disk, &bg->desc, 32);
+
+	diskSeek(disk, BLOCK_SIZE * bg->desc.blockBitmap);
+	bg->blockBitmap = malloc(BLOCK_SIZE);
+	diskCopy(disk, bg->blockBitmap, BLOCK_SIZE);
+
+	diskSeek(disk, BLOCK_SIZE * bg->desc.inodeBitmap);
+	bg->inodeBitmap = malloc(BLOCK_SIZE);
+	diskCopy(disk, bg->inodeBitmap, BLOCK_SIZE);
+
+	diskSeek(disk, BLOCK_SIZE * bg->desc.inodeTable);
+	bg->inodes = malloc(sizeof(*bg->inodes) * bg->sb.inodesPerGroup);
+	for( uint32_t i = 0; i < bg->sb.inodesPerGroup; ++i ) {
+		inodeRead(&bg->inodes[i], disk);
+		diskSkip(disk, bg->sb.inodeSize - 128);
+	}
 
 	return true;
 }
@@ -63,7 +75,6 @@ void bgFree(BlockGroup *bg) {
 	free(bg->inodeBitmap);
 	free(bg->inodes);
 	free(bg->data);
-	free(bg->bgtable);
 }
 
 void bgFreeAll(BlockGroup *bgs, size_t count) {

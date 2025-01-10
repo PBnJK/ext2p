@@ -77,7 +77,12 @@ typedef struct _Inode {
 	uint32_t blocks; /* 512-byte blocks reserved to contain the inode's data */
 
 	uint32_t flags; /* File flags */
-	uint32_t osd1; /* OS-dependent value 1 */
+
+	union {
+		uint32_t linuxReserved;
+		uint32_t hurdTranslator;
+		uint32_t masixReserved;
+	} osd1; /* OS-dependent value 1 */
 
 	uint32_t block[15]; /* Data blocks */
 	uint32_t generation; /* File version (NTFS) */
@@ -86,7 +91,30 @@ typedef struct _Inode {
 	uint32_t size_hi; /* Size of the file (high-bytes) */
 
 	uint32_t faddr; /* File fragment location */
-	uint8_t osd2[12]; /* OS-dependent value 2 */
+
+	union {
+		struct {
+			uint8_t fragNumber; /* Fragment number */
+			uint8_t fragSize; /* Fragment size */
+			uint16_t pad1;
+			uint8_t uidHigh; /* High-byte of the uid */
+			uint8_t gidHigh; /* High-byte of the gid */
+			uint16_t pad2;
+		} linux;
+		struct {
+			uint8_t fragNumber; /* Fragment number */
+			uint8_t fragSize; /* Fragment size */
+			uint16_t modeHigh; /* High bytes of the mode */
+			uint8_t uidHigh; /* High-byte of the uid */
+			uint8_t gidHigh; /* High-byte of the gid */
+			uint32_t authorUID; /* User ID of the file author */
+		} hurd;
+		struct {
+			uint8_t fragNumber; /* Fragment number */
+			uint8_t fragSize; /* Fragment size */
+			uint8_t pad[10];
+		} masix;
+	} osd2; /* OS-dependent value 2 */
 } Inode;
 
 bool inodeRead(Inode *inode, Disk *disk);

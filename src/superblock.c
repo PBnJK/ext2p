@@ -11,7 +11,7 @@
 #include "superblock.h"
 
 bool sbRead(Superblock *sb, Disk *disk) {
-	diskCopy(disk, sb, 264);
+	diskCopy(disk, sb, SB_SIZE);
 
 	if( sb->magic != EXT2_SUPER_MAGIC ) {
 		ERR("Superblock has bad magic %04X (should be EF53)", sb->magic);
@@ -35,5 +35,6 @@ bool sbRead(Superblock *sb, Disk *disk) {
 	}
 
 	diskSkip(disk, 760);
+
 	return true;
 }

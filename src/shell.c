@@ -2,6 +2,7 @@
  * Shell
  */
 
+#include "util.h"
 #ifdef _WIN32
 #include <conio.h>
 #else
@@ -23,15 +24,16 @@
 
 #include "shell.h"
 
-typedef bool (*cmd_fn)(Shell *shell, int argc, char *argv[]);
+typedef int (*cmd_fn)(Shell *shell, int argc, char *argv[]);
 
-#define SHELL_FN(N) static bool _shell_##N(Shell *shell, int argc, char *argv[])
+#define SHELL_FN(N) static int _shell_##N(Shell *shell, int argc, char *argv[])
 
 typedef struct _ShellCommand {
 	char *name;
 	cmd_fn fn;
 } ShellCommand;
 
+SHELL_FN(cat);
 SHELL_FN(cd);
 SHELL_FN(clear);
 SHELL_FN(exit);
@@ -40,14 +42,19 @@ SHELL_FN(help);
 SHELL_FN(ls);
 
 static ShellCommand _shellCommands[] = {
-	{ "cd", _shell_cd },	 { "clear", _shell_clear },
-	{ "cls", _shell_clear }, { "dir", _shell_ls },
-	{ "exit", _shell_exit }, { "fsdump", _shell_fsdump },
-	{ "help", _shell_help }, { "ls", _shell_ls },
+	{ "cat", _shell_cat }, /* displays file contents */
+	{ "cd", _shell_cd }, /* changes the current directory */
+	{ "clear", _shell_clear }, /* clears the screen */
+	{ "cls", _shell_clear }, /* clears the screen */
+	{ "dir", _shell_ls }, /* lists a directory's contents */
+	{ "exit", _shell_exit }, /* exits the shell */
+	{ "fsdump", _shell_fsdump }, /* dumps filesystem info */
+	{ "help", _shell_help }, /* prints help information */
+	{ "ls", _shell_ls }, /* lists a directory's contents */
 };
 const int SHELL_CMD_COUNT = sizeof(_shellCommands) / sizeof(ShellCommand);
 
-static bool _checkCommands(Shell *shell, char *buf, bool *run);
+static bool _checkCommands(Shell *shell, char *buf);
 static int _getArgs(char *buf, char *argv[64]);
 
 static void _tryLevenshtein(char *buf);
@@ -57,7 +64,11 @@ Shell *shellOpen(const char *IMGPATH) {
 
 	shell->fs = ext2Open(IMGPATH);
 	shell->cd = INODE_RES_ROOT_DIR;
+
 	shell->pathLevel = 0;
+
+	shell->err = EXIT_SUCCESS;
+	shell->run = true;
 
 	return shell;
 }
@@ -76,16 +87,20 @@ bool shellRun(Shell *shell) {
 	puts("== ext2 shell ==");
 	puts("type 'help' for help");
 
-	bool run = true;
 	char buf[1024];
 
-	while( run ) {
+	while( shell->run ) {
 		fputs("\n/", stdout);
 		for( int i = 0; i < shell->pathLevel; ++i ) {
 			fprintf(stdout, "%s/", shell->path[i]);
 		}
 
-		fputs("\n> ", stdout);
+		if( shell->err == EXIT_SUCCESS ) {
+			fputs("\n> ", stdout);
+		} else {
+			fputs("\n" ANSI_COLOR_RED "> " ANSI_COLOR_RESET, stdout);
+		}
+
 		if( fgets(buf, 1024, stdin) == NULL ) {
 			break;
 		}
@@ -96,7 +111,7 @@ bool shellRun(Shell *shell) {
 
 		buf[strcspn(buf, "\n")] = '\0';
 
-		bool cmdFound = _checkCommands(shell, buf, &run);
+		bool cmdFound = _checkCommands(shell, buf);
 		if( !cmdFound ) {
 			printf("no such command '%s'", buf);
 			_tryLevenshtein(buf);
@@ -109,7 +124,7 @@ bool shellRun(Shell *shell) {
 	return true;
 }
 
-static bool _checkCommands(Shell *shell, char *buf, bool *run) {
+static bool _checkCommands(Shell *shell, char *buf) {
 	ShellCommand *cmd;
 
 	char *argv[64];
@@ -119,7 +134,7 @@ static bool _checkCommands(Shell *shell, char *buf, bool *run) {
 		cmd = &_shellCommands[i];
 
 		if( strcmp(argv[0], cmd->name) == 0 ) {
-			*run = cmd->fn(shell, argc, argv);
+			shell->err = cmd->fn(shell, argc, argv);
 
 			return true;
 		}
@@ -171,6 +186,14 @@ static void _tryLevenshtein(char *buf) {
 	printf(" (did you mean '%s'?)\n", bestCmd);
 }
 
+SHELL_FN(cat) {
+	UNUSED(shell);
+	UNUSED(argc);
+	UNUSED(argv);
+
+	return EXIT_SUCCESS;
+}
+
 SHELL_FN(cd) {
 	if( argc != 2 ) {
 		puts("usage: cd [dir]");
@@ -178,12 +201,12 @@ SHELL_FN(cd) {
 
 	char *into = argv[1];
 	if( strcmp(into, ".") == 0 ) {
-		return true;
+		return EXIT_SUCCESS;
 	}
 
 	Dir *root = ext2GetDir(shell->fs, shell->cd);
 	if( root == NULL ) {
-		return true;
+		return EXIT_FAILURE;
 	}
 
 	bool found = false;
@@ -204,7 +227,9 @@ SHELL_FN(cd) {
 
 	if( !found ) {
 		printf("couldn't cd: '%s' not found\n", into);
-		goto end;
+
+		dirFreeLinkedList(root);
+		return EXIT_FAILURE;
 	}
 
 	if( dir->filetype != DIR_FT_DIR ) {
@@ -212,43 +237,42 @@ SHELL_FN(cd) {
 			"couldn't cd: '%s' is not a dir (is a %s)\n", into,
 			dirGetFiletype(dir)
 		);
-		goto end;
+
+		dirFreeLinkedList(root);
+		return EXIT_FAILURE;
 	}
 
 	shell->cd = dir->inode;
 
 	if( strcmp(into, "..") == 0 ) {
-		if( shell->pathLevel == 0 ) {
-			goto end;
+		if( shell->pathLevel > 0 ) {
+			--shell->pathLevel;
 		}
-
-		--shell->pathLevel;
 	} else if( shell->pathLevel < 127 ) {
 		strncpy(
 			shell->path[shell->pathLevel++], dir->filename, dir->nameLen + 1
 		);
 	}
 
-end:
 	dirFreeLinkedList(root);
-	return true;
+	return EXIT_SUCCESS;
 }
 
 SHELL_FN(clear) {
-	(void)shell;
-	(void)argc;
-	(void)argv;
+	UNUSED(shell);
+	UNUSED(argc);
+	UNUSED(argv);
 
 	clrscr();
-	return true;
+	return EXIT_SUCCESS;
 }
 
 SHELL_FN(exit) {
-	(void)shell;
-	(void)argc;
-	(void)argv;
+	UNUSED(argc);
+	UNUSED(argv);
 
-	return false;
+	shell->run = false;
+	return EXIT_SUCCESS;
 }
 
 static void _fsdumpUsage(void) {
@@ -269,7 +293,7 @@ static void _fsdumpUsage(void) {
 SHELL_FN(fsdump) {
 	if( argc != 2 ) {
 		_fsdumpUsage();
-		return true;
+		return EXIT_FAILURE;
 	}
 
 	int flags = 0;
@@ -312,18 +336,18 @@ SHELL_FN(fsdump) {
 		default:
 			printf("unknown character in format string '%c'\n\n", c);
 			_fsdumpUsage();
-			return true;
+			return EXIT_FAILURE;
 		}
 	}
 
 	ext2Dump(shell->fs, flags);
-	return true;
+	return EXIT_SUCCESS;
 }
 
 SHELL_FN(help) {
-	(void)shell;
-	(void)argc;
-	(void)argv;
+	UNUSED(shell);
+	UNUSED(argc);
+	UNUSED(argv);
 
 	puts("== ext2 shell ==");
 	putchar('\n');
@@ -346,16 +370,16 @@ SHELL_FN(help) {
 	puts("faq:");
 	puts("  how do i exit?   ctrl+c or type 'exit'");
 
-	return true;
+	return EXIT_SUCCESS;
 }
 
 SHELL_FN(ls) {
-	(void)argc;
-	(void)argv;
+	UNUSED(argc);
+	UNUSED(argv);
 
 	Dir *root = ext2GetDir(shell->fs, shell->cd);
 	if( root == NULL ) {
-		return true;
+		return EXIT_FAILURE;
 	}
 
 	Dir *dir = root;
@@ -369,5 +393,5 @@ SHELL_FN(ls) {
 	}
 
 	dirFreeLinkedList(root);
-	return true;
+	return EXIT_SUCCESS;
 }

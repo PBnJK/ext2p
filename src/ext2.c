@@ -29,7 +29,7 @@ Ext2 *ext2Open(const char *FILEPATH) {
 
 	/* Read first block group */
 	ext2->bgs = malloc(sizeof(*ext2->bgs));
-	if( !bgRead(ext2->bgs, ext2->disk) ) {
+	if( !bgRead(0, ext2->bgs, ext2->disk) ) {
 		return NULL;
 	}
 

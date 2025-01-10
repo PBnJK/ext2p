@@ -1,14 +1,19 @@
 #ifndef GUARD_EXT2P_SHELL_H_
 #define GUARD_EXT2P_SHELL_H_
 
-#include "ext2.h"
+#include <stdbool.h>
 #include <stdint.h>
+
+#include "ext2.h"
 
 typedef struct _Shell {
 	uint32_t cd; /* Current directory */
 
 	int pathLevel;
 	char path[255][128];
+
+	bool run;
+	int err;
 
 	Ext2 *fs;
 } Shell;

@@ -50,7 +50,7 @@ void ext2Dump(Ext2 *ext2, int flags) {
 
 	if( flags & DUMP_BGDESCRIPTOR ) {
 		for( int i = 0; i < 32; ++i ) {
-			_bgDump(&ext2->bgs->bgtable[i], i);
+			_bgDump(&ext2->bgs[i].desc, i);
 			putchar('\n');
 		}
 	}
@@ -58,7 +58,7 @@ void ext2Dump(Ext2 *ext2, int flags) {
 	if( flags & DUMP_ALL_BGDESCRIPTOR ) {
 		uint32_t blockCount = (1024 << ext2->bgs->sb.logBlockSize) / 32;
 		for( uint32_t i = 0; i < blockCount; ++i ) {
-			_bgDump(&ext2->bgs->bgtable[i], i);
+			_bgDump(&ext2->bgs[i].desc, i);
 			putchar('\n');
 		}
 	}

@@ -13,18 +13,17 @@
 
 typedef struct _BlockGroup {
 	Superblock sb;
-	BlockGroupDescriptor *bgtable;
+	BlockGroupDescriptor desc;
 
 	char *blockBitmap;
 	char *inodeBitmap;
-
 	Inode *inodes;
-	Disk *data;
 
+	Disk *data;
 	uint32_t blocksRead;
 } BlockGroup;
 
-bool bgRead(BlockGroup *bg, Disk *disk);
+bool bgRead(int num, BlockGroup *bg, Disk *disk);
 bool bgReadAll(BlockGroup *bgs, Disk *disk);
 
 void bgFree(BlockGroup *block);

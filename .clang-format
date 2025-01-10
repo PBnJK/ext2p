@@ -20,4 +20,5 @@ SpacesInParensOptions:
 AllowShortFunctionsOnASingleLine: Empty
 
 PointerAlignment: Right
+
 AlignAfterOpenBracket: BlockIndent

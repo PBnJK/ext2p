@@ -13,6 +13,8 @@
 #define EXT2_REV0_FIRST_INODE 11
 #define EXT2_REV0_INODE_SIZE 128
 
+#define SB_SIZE 264
+
 /* Compatible features bitmasks
  *
  * A filesystem implementation that does not handle these features is still able
