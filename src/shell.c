@@ -401,6 +401,7 @@ SHELL_FN(help) {
 	putchar('\n');
 
 	puts("commands:");
+	puts("  cat              displays the contents of a file");
 	puts("  cd               changes the current directory");
 	puts("  clear            clears the screen");
 	puts("  cls              'clear' alias -- clears the screen");
@@ -409,6 +410,7 @@ SHELL_FN(help) {
 	puts("  fsdump           dumps information about the filesystem");
 	puts("  help             display this help text");
 	puts("  ls               lists the contents of a directory");
+	puts("  stat             displays information about a file");
 	putchar('\n');
 
 	puts("faq:");
