@@ -6,22 +6,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "fault.h"
 #include "shell.h"
 
 static void _usage(void);
 
 int main(int argc, char *argv[]) {
-	if( argc < 2 ) {
+	char *img = NULL;
+	if( argc > 2 ) {
 		_usage();
 		exit(EXIT_FAILURE);
 	}
 
-	char *img = argv[1];
-	if( img == NULL ) {
-		ERR("must provide an input image\n\n");
-		_usage();
-		return EXIT_FAILURE;
+	if( argc == 2 ) {
+		img = argv[1];
 	}
 
 	Shell *shell = shellOpen(img);

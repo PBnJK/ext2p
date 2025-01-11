@@ -27,6 +27,8 @@ void dirReadLinkedList(Disk *disk, uint32_t blockSize, Dir *dir) {
 			break;
 		}
 
+		curr->offset = sentinel;
+
 		curr->inode = ino;
 		curr->nextEntry = diskRead16(disk);
 		curr->nameLen = diskRead8(disk);

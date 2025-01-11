@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include "bgdescriptor.h"
 #include "dir.h"
@@ -149,6 +151,53 @@ bool bgReadFile(BlockGroup *bg, uint32_t inodenum, FP *fp) {
 	}
 
 	return true;
+}
+
+void bgDeleteFile(BlockGroup *bg, Dir *root, Dir *dir) {
+	uint32_t inodenum = _inodeToIndex(bg, dir->inode);
+	Inode *inode = &bg->inodes[inodenum];
+
+	bg->inodeBitmap[inodenum >> 3] &= ~(1 << (inodenum % 8));
+	memset(inode, 0, 128);
+
+	Inode *rootInode = &bg->inodes[_inodeToIndex(bg, root->inode)];
+	diskSeek(bg->data, bgOffsetBlock(bg, rootInode->block[0]));
+	diskSkip(bg->data, dir->offset);
+
+	rootInode->size_lo -= 4 + dir->nextEntry;
+	inode->deleteTime = time(NULL);
+
+	if( dir->next == NULL ) {
+		diskWrite32(bg->data, 0);
+		return;
+	}
+
+	/* Shift directory entries down */
+	while( true ) {
+		dir = dir->next;
+		if( dir == NULL ) {
+			break;
+		}
+
+		diskWrite32(bg->data, dir->inode);
+		diskWrite16(bg->data, dir->nextEntry);
+		diskWrite8(bg->data, dir->nameLen);
+		diskWrite8(bg->data, dir->filetype);
+
+		for( uint8_t i = 0; i < dir->nameLen; ++i ) {
+			diskWrite8(bg->data, dir->filename[i]);
+		}
+
+		diskRewind(bg->data, 8 + dir->nameLen);
+		diskSkip(bg->data, dir->nextEntry);
+	}
+}
+
+void bgDeleteDir(BlockGroup *bg, Dir *root, Dir *dir) {
+	uint32_t inodenum = _inodeToIndex(bg, dir->inode);
+	Inode *inode = &bg->inodes[inodenum];
+
+	UNUSED(inode);
 }
 
 static uint32_t _inodeToIndex(BlockGroup *bg, uint32_t inodenum) {

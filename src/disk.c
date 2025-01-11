@@ -20,7 +20,14 @@ Disk *diskOpen(const char *FILEPATH) {
 		FATAL("couldn't allocate memory for disk");
 	}
 
-	utilReadFile(FILEPATH, &disk->fp);
+	if( !utilReadFile(FILEPATH, &disk->fp) ) {
+		free(disk);
+		return NULL;
+	}
+
+	disk->filepath = malloc(strlen(FILEPATH) + 1);
+	strcpy(disk->filepath, FILEPATH);
+
 	return disk;
 }
 
@@ -30,11 +37,13 @@ Disk *diskClone(Disk *disk) {
 		FATAL("couldn't allocate memory for disk");
 	}
 
+	clone->filepath = disk->filepath;
 	utilCloneFile(&disk->fp, &clone->fp);
 	return clone;
 }
 
 void diskClose(Disk *disk) {
+	free(disk->filepath);
 	utilFreeFile(&disk->fp);
 	free(disk);
 }
@@ -76,6 +85,44 @@ uint64_t diskRead64(Disk *disk) {
 	return utilRead64(true, &disk->fp);
 }
 
+void diskWrite8(Disk *disk, uint8_t data) {
+	*disk->fp.data = data;
+	++disk->fp.data;
+}
+
+void diskWrite16(Disk *disk, uint16_t data) {
+	diskWrite8(disk, UTIL_SHFR(data, 0));
+	diskWrite8(disk, UTIL_SHFR(data, 8));
+}
+
+void diskWrite32(Disk *disk, uint32_t data) {
+	diskWrite8(disk, UTIL_SHFR(data, 0));
+	diskWrite8(disk, UTIL_SHFR(data, 8));
+	diskWrite8(disk, UTIL_SHFR(data, 16));
+	diskWrite8(disk, UTIL_SHFR(data, 24));
+}
+
+void diskWrite64(Disk *disk, uint64_t data) {
+	diskWrite8(disk, UTIL_SHFR(data, 0));
+	diskWrite8(disk, UTIL_SHFR(data, 8));
+	diskWrite8(disk, UTIL_SHFR(data, 16));
+	diskWrite8(disk, UTIL_SHFR(data, 24));
+	diskWrite8(disk, UTIL_SHFR(data, 32));
+	diskWrite8(disk, UTIL_SHFR(data, 40));
+	diskWrite8(disk, UTIL_SHFR(data, 48));
+	diskWrite8(disk, UTIL_SHFR(data, 56));
+}
+
+FILE *diskOpenAsFile(Disk *disk, long startPos) {
+	FILE *file = fopen(disk->filepath, "r+b");
+	if( file == NULL ) {
+		FATAL("couldn't reopen disk file\n");
+	}
+
+	fseek(file, startPos, SEEK_SET);
+	return file;
+}
+
 void diskSkip(Disk *disk, size_t skip) {
 	if( !diskCheckBounds(disk, skip) ) {
 		FATAL("tried to read past readable area\n");
@@ -112,4 +159,18 @@ void diskSeekStart(Disk *disk) {
 
 size_t diskGetPos(Disk *disk) {
 	return disk->fp.data - disk->fp._start;
+}
+
+void diskSave(Disk *disk, const char *FILEPATH) {
+	size_t pos = diskGetPos(disk);
+	diskSeekStart(disk);
+
+	FILE *file = fopen(FILEPATH, "wb");
+	if( file == NULL ) {
+		FATAL("couldn't open file");
+	}
+
+	fwrite(disk->fp.data, 1, disk->fp.size, file);
+
+	diskSeek(disk, pos);
 }

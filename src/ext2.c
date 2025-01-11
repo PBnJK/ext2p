@@ -11,6 +11,7 @@
 #include <stdlib.h>
 
 #include "bg.h"
+#include "dir.h"
 #include "disk.h"
 #include "superblock.h"
 #include "util.h"
@@ -72,6 +73,42 @@ bool ext2ReadFile(Ext2 *ext2, uint32_t inodenum, FP *fp) {
 	return bgReadFile(&ext2->bgs[bg], inodenum, fp);
 }
 
+bool ext2DeleteFile(Ext2 *ext2, Dir *root, Dir *file) {
+	if( file->filetype != DIR_FT_FILE ) {
+		return false;
+	}
+
+	uint32_t bg = _inodeToBG(ext2, file->inode);
+	bgDeleteFile(&ext2->bgs[bg], root, file);
+
+	return true;
+}
+
+/* battle plan:
+ * - loop over children;
+ *   - is dir?
+ *     - recursively call this function;
+ *     - CONTINUE;
+ *   - is file?
+ *     - call ext2DeleteFile;
+ *     - CONTINUE;
+ * - delete inode;
+ * - change inode bitmap + block bitmap;
+ * - update directory entry;
+ * - END.
+ */
+bool ext2DeleteDir(Ext2 *ext2, Dir *root, Dir *dir) {
+	if( dir->filetype != DIR_FT_DIR ) {
+		return false;
+	}
+
+	return true;
+}
+
 static uint32_t _inodeToBG(Ext2 *ext2, uint32_t inodenum) {
 	return (inodenum - 1) / ext2->bgs->sb.inodesPerGroup;
+}
+
+void ext2SaveToFile(Ext2 *ext2, const char *FILEPATH) {
+	diskSave(ext2->disk, FILEPATH);
 }

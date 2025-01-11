@@ -36,6 +36,9 @@ uint64_t bgGetInodeSize(BlockGroup *bg, Inode *inode);
 bool bgGetDir(BlockGroup *bg, uint32_t inodenum, Dir *dir);
 bool bgReadFile(BlockGroup *bg, uint32_t inodenum, FP *fp);
 
+void bgDeleteFile(BlockGroup *bg, Dir *root, Dir *dir);
+void bgDeleteDir(BlockGroup *bg, Dir *root, Dir *dir);
+
 uint32_t bgOffsetBlock(BlockGroup *bg, uint32_t block);
 
 #endif // !GUARD_EXT2_BLOCK_H_

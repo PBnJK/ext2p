@@ -33,6 +33,7 @@ typedef int (*cmd_fn)(Shell *shell, int argc, char *argv[]);
 typedef struct _ShellCommand {
 	char *name;
 	cmd_fn fn;
+	bool needsMount;
 } ShellCommand;
 
 SHELL_FN(cat);
@@ -43,36 +44,63 @@ SHELL_FN(fsdump);
 SHELL_FN(help);
 SHELL_FN(ls);
 SHELL_FN(man);
+SHELL_FN(mount);
+SHELL_FN(rm);
+SHELL_FN(rmdir);
+SHELL_FN(save);
 SHELL_FN(stat);
+SHELL_FN(umount);
 
 static ShellCommand _shellCommands[] = {
-	{ "cat", _shell_cat }, /* displays file contents */
-	{ "cd", _shell_cd }, /* changes the current directory */
-	{ "clear", _shell_clear }, /* clears the screen */
-	{ "cls", _shell_clear }, /* clears the screen */
-	{ "dir", _shell_ls }, /* lists a directory's contents */
-	{ "exit", _shell_exit }, /* exits the shell */
-	{ "fsdump", _shell_fsdump }, /* dumps filesystem info */
-	{ "help", _shell_help }, /* prints help information */
-	{ "ls", _shell_ls }, /* lists a directory's contents */
-	{ "man", _shell_man }, /* display command documentation */
-	{ "stat", _shell_stat }, /* dumps file info */
+	{ "cat", _shell_cat, true }, /* displays file contents */
+	{ "cd", _shell_cd, true }, /* changes the current directory */
+	{ "clear", _shell_clear, false }, /* clears the screen */
+	{ "cls", _shell_clear, false }, /* clears the screen */
+	{ "dir", _shell_ls, true }, /* lists a directory's contents */
+	{ "exit", _shell_exit, false }, /* exits the shell */
+	{ "fsdump", _shell_fsdump, true }, /* dumps filesystem info */
+	{ "help", _shell_help, false }, /* prints help information */
+	{ "ls", _shell_ls, true }, /* lists a directory's contents */
+	{ "man", _shell_man, false }, /* display command documentation */
+	{ "mnt", _shell_mount, false }, /* mounts a filesystem */
+	{ "mount", _shell_mount, false }, /* mounts a filesystem */
+	{ "rm", _shell_rm, true }, /* deletes a file */
+	{ "rmdir", _shell_rmdir, true }, /* deletes a directory */
+	{ "save", _shell_save, true }, /* saves the filesystem */
+	{ "stat", _shell_stat, true }, /* dumps file info */
+	{ "umnt", _shell_umount, true }, /* unmounts a filesystem */
+	{ "umount", _shell_umount, true }, /* unmounts a filesystem */
 };
 const int SHELL_CMD_COUNT = sizeof(_shellCommands) / sizeof(ShellCommand);
+
+static const char *SUFFIX[] = { "B", "KiB", "MiB", "GiB", "TiB" };
+static const uint8_t SUFFIX_LEN = sizeof(SUFFIX) / sizeof(*SUFFIX);
 
 static bool _checkCommands(Shell *shell, char *buf);
 static int _getArgs(char *buf, char *argv[64]);
 
 static void _tryLevenshtein(char *buf);
 
+static bool _getFile(Shell *shell, char *filename, Dir *root, Dir **dir);
+static Dir *_findInode(Dir *root, char *filename);
+
 static char *_humanizeSize(uint64_t bytes, char *hrbytes);
 
 Shell *shellOpen(const char *IMGPATH) {
 	Shell *shell = malloc(sizeof(*shell));
 
-	shell->fs = ext2Open(IMGPATH);
-	shell->cd = INODE_RES_ROOT_DIR;
+	if( IMGPATH == NULL ) {
+		shell->fs = NULL;
+	} else {
+		shell->fs = ext2Open(IMGPATH);
+		if( shell->fs == NULL ) {
+			WARN(
+				"'%s' is not a valid image; starting shell unmounted", IMGPATH
+			);
+		}
+	}
 
+	shell->cd = INODE_RES_ROOT_DIR;
 	shell->pathLevel = 0;
 
 	shell->err = EXIT_SUCCESS;
@@ -82,7 +110,9 @@ Shell *shellOpen(const char *IMGPATH) {
 }
 
 void shellFree(Shell *shell) {
-	ext2Free(shell->fs);
+	if( shell->fs != NULL ) {
+		ext2Free(shell->fs);
+	}
 
 	free(shell);
 }
@@ -121,7 +151,7 @@ bool shellRun(Shell *shell) {
 
 		bool cmdFound = _checkCommands(shell, buf);
 		if( !cmdFound ) {
-			printf("no such command '%s'", buf);
+			ERR("no such command '%s'", buf);
 			_tryLevenshtein(buf);
 		}
 	}
@@ -140,8 +170,12 @@ static bool _checkCommands(Shell *shell, char *buf) {
 		cmd = &_shellCommands[i];
 
 		if( strcmp(argv[0], cmd->name) == 0 ) {
-			shell->err = cmd->fn(shell, argc, argv);
+			if( cmd->needsMount && shell->fs == NULL ) {
+				ERR("a filesystem needs to be mounted\n");
+				return true;
+			}
 
+			shell->err = cmd->fn(shell, argc, argv);
 			return true;
 		}
 	}
@@ -192,31 +226,6 @@ static void _tryLevenshtein(char *buf) {
 	printf(" (did you mean '%s'?)\n", bestCmd);
 }
 
-Dir *_findInode(Dir *root, char *filename) {
-	bool found = false;
-
-	Dir *dir = root;
-	while( true ) {
-		if( dir == NULL ) {
-			break;
-		}
-
-		if( strcmp(dir->filename, filename) == 0 ) {
-			found = true;
-			break;
-		}
-
-		dir = dir->next;
-	}
-
-	if( !found ) {
-		ERR("'%s' not found\n", filename);
-		return NULL;
-	}
-
-	return dir;
-}
-
 SHELL_FN(cat) {
 	if( argc != 2 ) {
 		puts("usage: cat [file]");
@@ -225,19 +234,13 @@ SHELL_FN(cat) {
 
 	char *filename = argv[1];
 
-	Dir root;
-	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
-		return EXIT_FAILURE;
-	}
-
-	Dir *dir = _findInode(&root, filename);
-	if( dir == NULL ) {
-		dirFreeLinkedList(&root);
+	Dir root, *dir;
+	if( !_getFile(shell, filename, &root, &dir) ) {
 		return EXIT_FAILURE;
 	}
 
 	if( dir->filetype != DIR_FT_FILE ) {
-		printf("'%s' is not a file (is a %s)\n", filename, dirGetFiletype(dir));
+		ERR("'%s' is not a file (is a %s)\n", filename, dirGetFiletype(dir));
 
 		dirFreeLinkedList(&root);
 		return EXIT_FAILURE;
@@ -266,20 +269,13 @@ SHELL_FN(cd) {
 		return EXIT_SUCCESS;
 	}
 
-	Dir root;
-	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
-		dirFreeLinkedList(&root);
-		return EXIT_FAILURE;
-	}
-
-	Dir *dir = _findInode(&root, into);
-	if( dir == NULL ) {
-		dirFreeLinkedList(&root);
+	Dir root, *dir;
+	if( !_getFile(shell, into, &root, &dir) ) {
 		return EXIT_FAILURE;
 	}
 
 	if( dir->filetype != DIR_FT_DIR ) {
-		printf("'%s' is not a dir (is a %s)\n", into, dirGetFiletype(dir));
+		ERR("'%s' is not a dir (is a %s)\n", into, dirGetFiletype(dir));
 
 		dirFreeLinkedList(&root);
 		return EXIT_FAILURE;
@@ -380,7 +376,7 @@ SHELL_FN(fsdump) {
 			flags |= DUMP_SUPERBLOCK;
 			break;
 		default:
-			printf("unknown character in format string '%c'\n\n", c);
+			ERR("unknown character in format string '%c'\n\n", c);
 			_fsdumpUsage();
 			return EXIT_FAILURE;
 		}
@@ -413,7 +409,12 @@ SHELL_FN(help) {
 	puts("  help             display this help text");
 	puts("  ls               lists the contents of a directory");
 	puts("  man              displays the documentation for a command");
+	puts("  mnt              'mount' alias -- mounts a filesystem");
+	puts("  mount            mounts a filesystem");
+	puts("  save             saves the filesystem state");
 	puts("  stat             displays information about a file");
+	puts("  umnt             'umount' alias -- unmounts a filesystem");
+	puts("  umount           unmounts a filesystem");
 	putchar('\n');
 
 	puts("faq:");
@@ -438,6 +439,12 @@ SHELL_FN(ls) {
 			break;
 		}
 
+		if( strcmp(dir->filename, ".") == 0
+			|| strcmp(dir->filename, "..") == 0 ) {
+			dir = dir->next;
+			continue;
+		}
+
 		printf("  %-7s %s\n", dirGetFiletype(dir), dir->filename);
 		dir = dir->next;
 	}
@@ -447,11 +454,102 @@ SHELL_FN(ls) {
 }
 
 SHELL_FN(man) {
-	(void)shell;
-	(void)argc;
-	(void)argv;
+	UNUSED(shell);
+	UNUSED(argc);
+	UNUSED(argv);
 
 	puts("TODO: implement");
+	return EXIT_SUCCESS;
+}
+
+SHELL_FN(mount) {
+	if( argc != 2 ) {
+		puts("usage: mount [image]");
+		return EXIT_FAILURE;
+	}
+
+	if( shell->fs != NULL ) {
+		ERR("a filesystem is already mounted; unmount it first before mounting "
+			"another one\n");
+		return EXIT_FAILURE;
+	}
+
+	char *img = argv[1];
+	shell->fs = ext2Open(img);
+
+	if( shell->fs == NULL ) {
+		ERR("couldn't mount image at '%s'", img);
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
+}
+
+SHELL_FN(rm) {
+	if( argc != 2 ) {
+		puts("usage: rm [file]");
+		return EXIT_FAILURE;
+	}
+
+	char *filename = argv[1];
+
+	Dir root, *dir;
+	if( !_getFile(shell, filename, &root, &dir) ) {
+		return EXIT_FAILURE;
+	}
+
+	if( dir->filetype != DIR_FT_FILE ) {
+		ERR("'%s' is not a file (is a %s)\n", filename, dirGetFiletype(dir));
+
+		dirFreeLinkedList(&root);
+		return EXIT_FAILURE;
+	}
+
+	if( !ext2DeleteFile(shell->fs, &root, dir) ) {
+		dirFreeLinkedList(&root);
+		return EXIT_FAILURE;
+	}
+
+	dirFreeLinkedList(&root);
+	return EXIT_SUCCESS;
+}
+
+SHELL_FN(rmdir) {
+	UNUSED(shell);
+	UNUSED(argc);
+	UNUSED(argv);
+
+	char *filename = argv[1];
+
+	Dir root, *dir;
+	if( !_getFile(shell, filename, &root, &dir) ) {
+		return EXIT_FAILURE;
+	}
+
+	if( dir->filetype != DIR_FT_DIR ) {
+		ERR("'%s' is not a dir (is a %s)\n", filename, dirGetFiletype(dir));
+
+		dirFreeLinkedList(&root);
+		return EXIT_FAILURE;
+	}
+
+	if( !ext2DeleteDir(shell->fs, &root, dir) ) {
+		dirFreeLinkedList(&root);
+		return EXIT_FAILURE;
+	}
+
+	dirFreeLinkedList(&root);
+	return EXIT_SUCCESS;
+}
+
+SHELL_FN(save) {
+	if( argc != 2 ) {
+		puts("usage: save [filename]");
+		return EXIT_FAILURE;
+	}
+
+	ext2SaveToFile(shell->fs, argv[1]);
+
 	return EXIT_SUCCESS;
 }
 
@@ -463,15 +561,8 @@ SHELL_FN(stat) {
 
 	char *filename = argv[1];
 
-	Dir root;
-	if( !ext2GetDir(shell->fs, shell->cd, &root) ) {
-		dirFreeLinkedList(&root);
-		return EXIT_FAILURE;
-	}
-
-	Dir *dir = _findInode(&root, filename);
-	if( dir == NULL ) {
-		dirFreeLinkedList(&root);
+	Dir root, *dir;
+	if( !_getFile(shell, filename, &root, &dir) ) {
 		return EXIT_FAILURE;
 	}
 
@@ -516,8 +607,63 @@ SHELL_FN(stat) {
 	return EXIT_SUCCESS;
 }
 
-static const char *SUFFIX[] = { "B", "KiB", "MiB", "GiB", "TiB" };
-static const uint8_t SUFFIX_LEN = sizeof(SUFFIX) / sizeof(*SUFFIX);
+SHELL_FN(umount) {
+	UNUSED(argc);
+	UNUSED(argv);
+
+	if( shell->fs == NULL ) {
+		puts("no filesystem is mounted, ignoring");
+		return EXIT_SUCCESS;
+	}
+
+	ext2Free(shell->fs);
+	shell->fs = NULL;
+
+	shell->cd = INODE_RES_ROOT_DIR;
+	shell->pathLevel = 0;
+
+	return EXIT_SUCCESS;
+}
+
+static bool _getFile(Shell *shell, char *filename, Dir *root, Dir **dir) {
+	if( !ext2GetDir(shell->fs, shell->cd, root) ) {
+		dirFreeLinkedList(root);
+		return false;
+	}
+
+	*dir = _findInode(root, filename);
+	if( *dir == NULL ) {
+		dirFreeLinkedList(root);
+		return false;
+	}
+
+	return true;
+}
+
+static Dir *_findInode(Dir *root, char *filename) {
+	bool found = false;
+
+	Dir *dir = root;
+	while( true ) {
+		if( dir == NULL ) {
+			break;
+		}
+
+		if( strcmp(dir->filename, filename) == 0 ) {
+			found = true;
+			break;
+		}
+
+		dir = dir->next;
+	}
+
+	if( !found ) {
+		ERR("'%s' not found\n", filename);
+		return NULL;
+	}
+
+	return dir;
+}
 
 static char *_humanizeSize(uint64_t bytes, char *out) {
 	int i;

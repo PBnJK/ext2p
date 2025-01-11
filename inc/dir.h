@@ -18,6 +18,8 @@ typedef enum _Dir_Filetype {
 } Dir_Filetype;
 
 typedef struct _Dir {
+	uint32_t offset;
+
 	uint32_t inode;
 	uint16_t nextEntry;
 

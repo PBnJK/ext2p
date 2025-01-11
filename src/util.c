@@ -13,8 +13,6 @@
 
 #include "util.h"
 
-#define SHF(B, N) (((B) & 0xFF) << (N))
-
 static int _levenshtein(const char *A, size_t asz, const char *B, size_t bsz);
 
 bool utilReadFile(const char *FILEPATH, FP *fp) {
@@ -31,13 +29,13 @@ bool utilReadFile(const char *FILEPATH, FP *fp) {
 	fp->_start = malloc(fp->size + 1);
 	if( fp->_start == NULL ) {
 		ERR("failed to allocate buffer for file at '%s'\n", FILEPATH);
-		return NULL;
+		return false;
 	}
 
 	const size_t BYTES_READ = fread(fp->_start, sizeof(char), fp->size, file);
 	if( BYTES_READ < fp->size ) {
 		ERR("couldn't read the file at '%s'\n", FILEPATH);
-		return NULL;
+		return false;
 	}
 
 	fp->_start[BYTES_READ] = '\0';
@@ -92,7 +90,7 @@ uint32_t utilRead32(bool le, FP *fp) {
 		d = utilRead8(fp);
 	}
 
-	return SHF(a, 24) | SHF(b, 16) | SHF(c, 8) | (d & 0xFF);
+	return UTIL_SHF(a, 24) | UTIL_SHF(b, 16) | UTIL_SHF(c, 8) | (d & 0xFF);
 }
 
 uint64_t utilRead64(bool le, FP *fp) {
@@ -118,8 +116,30 @@ uint64_t utilRead64(bool le, FP *fp) {
 		h = utilRead8(fp);
 	}
 
-	return SHF(a, 56) | SHF(b, 48) | SHF(c, 40) | SHF(d, 32) | SHF(e, 24)
-		| SHF(f, 16) | SHF(g, 8) | (h & 0xFF);
+	return UTIL_SHF(a, 56) | UTIL_SHF(b, 48) | UTIL_SHF(c, 40) | UTIL_SHF(d, 32)
+		| UTIL_SHF(e, 24) | UTIL_SHF(f, 16) | UTIL_SHF(g, 8) | (h & 0xFF);
+}
+
+void utilWrite8(FILE *file, uint8_t data) {
+	fputc(data, file);
+}
+
+void utilWrite16(FILE *file, uint16_t data) {
+	fputc(UTIL_SHFR(data, 0), file);
+	fputc(UTIL_SHFR(data, 8), file);
+}
+
+void utilWrite32(FILE *file, uint32_t data) {
+	fputc(UTIL_SHFR(data, 0), file);
+	fputc(UTIL_SHFR(data, 8), file);
+	fputc(UTIL_SHFR(data, 16), file);
+}
+
+void utilWrite64(FILE *file, uint64_t data) {
+	fputc(UTIL_SHFR(data, 0), file);
+	fputc(UTIL_SHFR(data, 8), file);
+	fputc(UTIL_SHFR(data, 16), file);
+	fputc(UTIL_SHFR(data, 24), file);
 }
 
 size_t utilFmtTime(time_t time, fmttime_t ftime) {

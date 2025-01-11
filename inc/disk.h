@@ -3,10 +3,12 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "util.h"
 
 typedef struct _Disk {
+	char *filepath;
 	FP fp;
 } Disk;
 
@@ -27,6 +29,11 @@ uint16_t diskRead16(Disk *disk);
 uint32_t diskRead32(Disk *disk);
 uint64_t diskRead64(Disk *disk);
 
+void diskWrite8(Disk *disk, uint8_t data);
+void diskWrite16(Disk *disk, uint16_t data);
+void diskWrite32(Disk *disk, uint32_t data);
+void diskWrite64(Disk *disk, uint64_t data);
+
 void diskSkip(Disk *disk, size_t skip);
 void diskCopy(Disk *disk, void *dest, size_t size);
 
@@ -36,5 +43,7 @@ void diskSeek(Disk *disk, size_t pos);
 void diskSeekStart(Disk *disk);
 
 size_t diskGetPos(Disk *disk);
+
+void diskSave(Disk *disk, const char *FILEPATH);
 
 #endif // !GUARD_EXT2P_DISK_H_

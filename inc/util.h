@@ -12,6 +12,9 @@
 #define UTIL_MIN(A, B) (((A) < (B)) ? (A) : (B))
 #define UTIL_MAX(A, B) (((A) > (B)) ? (A) : (B))
 
+#define UTIL_SHF(B, N) (((B) & 0xFF) << (N))
+#define UTIL_SHFR(B, N) (((B) >> (N)) & 0xFF)
+
 /* Structure representing an open file
  * Used for passing data around
  */
@@ -24,7 +27,7 @@ typedef struct _FP {
 typedef char fmttime_t[BUFSIZ];
 
 /* Reads the file at 'FILEPATH' and returns its contents
- * Returns NULL on failure
+ * Returns false on failure
  */
 bool utilReadFile(const char *FILEPATH, FP *fp);
 
@@ -37,6 +40,11 @@ uint8_t utilRead8(FP *fp);
 uint16_t utilRead16(bool le, FP *fp);
 uint32_t utilRead32(bool le, FP *fp);
 uint64_t utilRead64(bool le, FP *fp);
+
+void utilWrite8(FILE *file, uint8_t data);
+void utilWrite16(FILE *file, uint16_t data);
+void utilWrite32(FILE *file, uint32_t data);
+void utilWrite64(FILE *file, uint64_t data);
 
 size_t utilFmtTime(time_t time, fmttime_t ftime);
 
