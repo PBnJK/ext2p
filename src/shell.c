@@ -42,6 +42,7 @@ SHELL_FN(exit);
 SHELL_FN(fsdump);
 SHELL_FN(help);
 SHELL_FN(ls);
+SHELL_FN(man);
 SHELL_FN(stat);
 
 static ShellCommand _shellCommands[] = {
@@ -54,6 +55,7 @@ static ShellCommand _shellCommands[] = {
 	{ "fsdump", _shell_fsdump }, /* dumps filesystem info */
 	{ "help", _shell_help }, /* prints help information */
 	{ "ls", _shell_ls }, /* lists a directory's contents */
+	{ "man", _shell_man }, /* display command documentation */
 	{ "stat", _shell_stat }, /* dumps file info */
 };
 const int SHELL_CMD_COUNT = sizeof(_shellCommands) / sizeof(ShellCommand);
@@ -410,6 +412,7 @@ SHELL_FN(help) {
 	puts("  fsdump           dumps information about the filesystem");
 	puts("  help             display this help text");
 	puts("  ls               lists the contents of a directory");
+	puts("  man              displays the documentation for a command");
 	puts("  stat             displays information about a file");
 	putchar('\n');
 
@@ -440,6 +443,15 @@ SHELL_FN(ls) {
 	}
 
 	dirFreeLinkedList(&root);
+	return EXIT_SUCCESS;
+}
+
+SHELL_FN(man) {
+	(void)shell;
+	(void)argc;
+	(void)argv;
+
+	puts("TODO: implement");
 	return EXIT_SUCCESS;
 }
 
